@@ -1,0 +1,99 @@
+{
+  "title": "Qwen Image 2512 \u2014 Text to Image (Network Volume)",
+  "description": "Generate images with ComfyUI + Qwen Image 2512 (fp8). Models loaded from attached network volume. Supports Lightning 4-step LoRA for fast generation.",
+  "type": "serverless",
+  "category": "image",
+  "iconUrl": "https://cpjrphpz3t5wbwfe.public.blob.vercel-storage.com/comfy-ui.png",
+  "config": {
+    "runsOn": "GPU",
+    "containerDiskInGb": 20,
+    "gpuIds": "ADA_24",
+    "gpuCount": 1,
+    "allowedCudaVersions": [
+      "12.7",
+      "12.6"
+    ],
+    "env": [
+      {
+        "key": "REFRESH_WORKER",
+        "input": {
+          "name": "Keep Worker Warm",
+          "type": "boolean",
+          "description": "false = keep worker alive between jobs (faster). true = fresh container each job.",
+          "default": false,
+          "advanced": false
+        }
+      },
+      {
+        "key": "NETWORK_VOLUME_DEBUG",
+        "input": {
+          "name": "Network Volume Debug",
+          "type": "boolean",
+          "description": "Enable on first run to verify all models are found on the network volume",
+          "default": false,
+          "advanced": true
+        }
+      },
+      {
+        "key": "COMFY_LOG_LEVEL",
+        "input": {
+          "name": "ComfyUI Log Level",
+          "type": "string",
+          "description": "DEBUG | INFO | WARNING | ERROR",
+          "default": "DEBUG",
+          "advanced": true
+        }
+      },
+      {
+        "key": "BUCKET_ENDPOINT_URL",
+        "input": {
+          "name": "S3 Bucket Endpoint URL",
+          "type": "string",
+          "description": "Upload output images to S3 (optional)",
+          "default": "",
+          "advanced": true
+        }
+      },
+      {
+        "key": "BUCKET_ACCESS_KEY_ID",
+        "input": {
+          "name": "S3 Access Key ID",
+          "type": "string",
+          "description": "AWS Access Key ID (if S3 upload enabled)",
+          "default": "",
+          "advanced": true
+        }
+      },
+      {
+        "key": "BUCKET_SECRET_ACCESS_KEY",
+        "input": {
+          "name": "S3 Secret Access Key",
+          "type": "string",
+          "description": "AWS Secret Access Key (if S3 upload enabled)",
+          "default": "",
+          "advanced": true
+        }
+      },
+      {
+        "key": "WEBSOCKET_RECONNECT_ATTEMPTS",
+        "input": {
+          "name": "WS Reconnect Attempts",
+          "type": "number",
+          "description": "How many times to retry if websocket drops",
+          "default": 5,
+          "advanced": true
+        }
+      },
+      {
+        "key": "WEBSOCKET_RECONNECT_DELAY_S",
+        "input": {
+          "name": "WS Reconnect Delay (s)",
+          "type": "number",
+          "description": "Seconds between reconnect attempts",
+          "default": 3,
+          "advanced": true
+        }
+      }
+    ]
+  }
+}

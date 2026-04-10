@@ -1,0 +1,153 @@
+{
+  "tests": [
+    {
+      "name": "qwen2512_basic",
+      "input": {
+        "workflow": {
+          "37": {
+            "class_type": "UNETLoader",
+            "inputs": {
+              "unet_name": "qwen_image_2512_fp8_e4m3fn.safetensors",
+              "weight_dtype": "fp8_e4m3fn"
+            },
+            "_meta": {
+              "title": "Load UNET"
+            }
+          },
+          "11": {
+            "class_type": "DualCLIPLoader",
+            "inputs": {
+              "clip_name1": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+              "clip_name2": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+              "type": "qwen2vl",
+              "device": "default"
+            },
+            "_meta": {
+              "title": "Load CLIP"
+            }
+          },
+          "12": {
+            "class_type": "VAELoader",
+            "inputs": {
+              "vae_name": "qwen_image_vae.safetensors"
+            },
+            "_meta": {
+              "title": "Load VAE"
+            }
+          },
+          "6": {
+            "class_type": "CLIPTextEncode",
+            "inputs": {
+              "text": "a red apple on a white table, photorealistic",
+              "clip": [
+                "11",
+                0
+              ]
+            },
+            "_meta": {
+              "title": "Positive"
+            }
+          },
+          "7": {
+            "class_type": "CLIPTextEncode",
+            "inputs": {
+              "text": "blurry, low quality",
+              "clip": [
+                "11",
+                0
+              ]
+            },
+            "_meta": {
+              "title": "Negative"
+            }
+          },
+          "5": {
+            "class_type": "EmptySD3LatentImage",
+            "inputs": {
+              "width": 512,
+              "height": 512,
+              "batch_size": 1
+            },
+            "_meta": {
+              "title": "Latent"
+            }
+          },
+          "3": {
+            "class_type": "KSampler",
+            "inputs": {
+              "model": [
+                "37",
+                0
+              ],
+              "positive": [
+                "6",
+                0
+              ],
+              "negative": [
+                "7",
+                0
+              ],
+              "latent_image": [
+                "5",
+                0
+              ],
+              "seed": 42,
+              "steps": 4,
+              "cfg": 1.0,
+              "sampler_name": "euler",
+              "scheduler": "simple",
+              "denoise": 1.0
+            },
+            "_meta": {
+              "title": "KSampler"
+            }
+          },
+          "8": {
+            "class_type": "VAEDecode",
+            "inputs": {
+              "samples": [
+                "3",
+                0
+              ],
+              "vae": [
+                "12",
+                0
+              ]
+            },
+            "_meta": {
+              "title": "Decode"
+            }
+          },
+          "9": {
+            "class_type": "SaveImage",
+            "inputs": {
+              "images": [
+                "8",
+                0
+              ],
+              "filename_prefix": "test_"
+            },
+            "_meta": {
+              "title": "Save"
+            }
+          }
+        }
+      },
+      "timeout": 300000
+    }
+  ],
+  "config": {
+    "gpuTypeId": "NVIDIA GeForce RTX 4090",
+    "gpuCount": 1,
+    "env": [
+      {
+        "key": "REFRESH_WORKER",
+        "value": "false"
+      }
+    ],
+    "allowedCudaVersions": [
+      "12.7",
+      "12.6"
+    ]
+  }
+}
