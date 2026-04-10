@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 # Time to wait between API check attempts in milliseconds
 COMFY_API_AVAILABLE_INTERVAL_MS = int(
-    os.environ.get("COMFY_API_AVAILABLE_INTERVAL_MS", 50)
+    os.environ.get("COMFY_API_AVAILABLE_INTERVAL_MS", 1000)
 )
 # Maximum number of API check attempts (0 = no limit, poll while ComfyUI process is alive)
 COMFY_API_AVAILABLE_MAX_RETRIES = int(
@@ -222,68 +222,98 @@ def _is_comfyui_process_alive():
         return True  # process exists but we can't signal it
 
 
-def check_server(url, retries=0, delay=50):
+def check_server(url, retries=0, delay=1000):
     """
-    Check if a server is reachable via HTTP GET request.
+    Check if the ComfyUI HTTP server is reachable.
 
-    When a PID file is available (written by start.sh), the function polls
-    indefinitely while the ComfyUI process is alive and fails immediately
-    when the process exits.  When no PID file is found it falls back to
-    the retry limit for backward compatibility.
+    Because start.sh now polls for HTTP readiness *before* launching
+    handler.py, this function should only be reached inside a job request
+    (not during container start-up).  That means any failure here almost
+    certainly means ComfyUI crashed or became unhealthy between jobs —
+    which is a "real error", not just "still initialising".
+
+    The log messages reflect this distinction:
+      • attempt == 1  →  first probe, may still be a transient blip
+      • 2 ≤ attempt < WARN_THRESHOLD  →  "server unhealthy, retrying"
+      • attempt ≥ WARN_THRESHOLD  →  escalate to WARNING level
 
     Args:
         url (str): The URL to check.
         retries (int): Max attempts. 0 means unlimited (poll while process alive).
-        delay (int): Time in milliseconds between retries.
+        delay (int): Milliseconds between retries. Default 1 000 ms (1 s).
 
     Returns:
         bool: True if the server is reachable, False otherwise.
     """
-    print(f"worker-comfyui - Checking API server at {url}...")
+    # Warn after this many consecutive failures (≈ 30 s at default interval)
+    WARN_THRESHOLD = 30
 
-    # Guard against zero/negative delay to avoid division by zero
     delay = max(1, delay)
-    # How often to print a "still waiting" log (every ~10 seconds)
     log_every = max(1, int(10_000 / delay))
     attempt = 0
 
+    print(f"[handler] Probing ComfyUI API at {url} …")
+
     while True:
-        # --- Check if ComfyUI process is still alive ---
+        # ── Fast-fail if ComfyUI process has already died ───────────
         process_status = _is_comfyui_process_alive()
         if process_status is False:
             print(
-                "worker-comfyui - ComfyUI process has exited. "
-                "Server will not become reachable."
+                "[handler] ❌ ComfyUI process has exited — server will never become "
+                "reachable.  Check container logs for a Python traceback / OOM-kill."
             )
             return False
 
+        # ── HTTP probe ────────────────────────────────────────────────
         try:
             response = requests.get(url, timeout=5)
             if response.status_code == 200:
-                print(f"worker-comfyui - API is reachable")
+                if attempt > 0:
+                    elapsed_s = (attempt * delay) / 1000
+                    print(
+                        f"[handler] ✅ ComfyUI API reachable after {attempt} probe(s) "
+                        f"({elapsed_s:.0f}s)."
+                    )
+                else:
+                    print(f"[handler] ✅ ComfyUI API reachable immediately.")
                 return True
         except requests.Timeout:
-            pass
-        except requests.RequestException:
-            pass
+            reason = "connection timed out"
+        except requests.ConnectionError:
+            reason = "connection refused (server may still be loading or has crashed)"
+        except requests.RequestException as exc:
+            reason = str(exc)
 
         attempt += 1
+        elapsed_s = (attempt * delay) / 1000
 
-        # If we can't track the process, enforce a retry limit to avoid
-        # hanging forever when the PID file is never written
+        # ── Enforce fallback retry cap when no PID file is available ──
         fallback = retries if retries > 0 else COMFY_API_FALLBACK_MAX_RETRIES
         if process_status is None and attempt >= fallback:
             print(
-                f"worker-comfyui - Failed to connect to server at {url} "
-                f"after {fallback} attempts (no PID file found)."
+                f"[handler] ❌ ComfyUI API unreachable after {fallback} attempts "
+                f"({elapsed_s:.0f}s) and no PID file found — giving up."
             )
             return False
 
-        if attempt % log_every == 0:
-            elapsed_s = (attempt * delay) / 1000
+        # ── Log level escalates with attempt count ────────────────────
+        if attempt >= WARN_THRESHOLD:
+            level_tag = "WARNING"
+        elif attempt > 1:
+            level_tag = "INFO"
+        else:
+            # First failure — give one quiet notice
+            level_tag = "DEBUG"
+
+        if attempt == 1 or attempt % log_every == 0:
             print(
-                f"worker-comfyui - Still waiting for API server... "
-                f"({elapsed_s:.0f}s elapsed, attempt {attempt})"
+                f"[handler] [{level_tag}] ComfyUI not responding ({reason}) — "
+                f"attempt {attempt}, {elapsed_s:.0f}s elapsed.  "
+                + (
+                    "This is likely a real server error — check ComfyUI logs."
+                    if attempt >= WARN_THRESHOLD
+                    else "Retrying …"
+                )
             )
 
         time.sleep(delay / 1000)
