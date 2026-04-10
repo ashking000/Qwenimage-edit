@@ -22,4 +22,4 @@ jobs:
         with:
           context: .
           push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/your-repo-name:latest
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/qwenimage2512-edit2511:latest
