@@ -33,15 +33,15 @@ TCMALLOC="$(ldconfig -p | grep -Po 'libtcmalloc\.so\.\d' | head -n 1 || true)"
 COMFY_PID_FILE="/tmp/comfyui.pid"
 
 echo "[start.sh] ──────────────────────────────────────────────"
-echo "[start.sh] COMFY_DIR          = $COMFY_DIR"
-echo "[start.sh] COMFY_HOST         = $COMFY_HOST"
-echo "[start.sh] COMFY_PORT         = $COMFY_PORT"
-echo "[start.sh] MODEL_BASE_PATH    = $MODEL_BASE_PATH"
-echo "[start.sh] CUSTOM_NODES_PATH  = $CUSTOM_NODES_PATH"
-echo "[start.sh] COMFY_LOG_LEVEL    = $COMFY_LOG_LEVEL"
-echo "[start.sh] COMFY_READY_TIMEOUT= $COMFY_READY_TIMEOUT"
+echo "[start.sh] COMFY_DIR           = $COMFY_DIR"
+echo "[start.sh] COMFY_HOST          = $COMFY_HOST"
+echo "[start.sh] COMFY_PORT          = $COMFY_PORT"
+echo "[start.sh] MODEL_BASE_PATH     = $MODEL_BASE_PATH"
+echo "[start.sh] CUSTOM_NODES_PATH   = $CUSTOM_NODES_PATH"
+echo "[start.sh] COMFY_LOG_LEVEL     = $COMFY_LOG_LEVEL"
+echo "[start.sh] COMFY_READY_TIMEOUT = $COMFY_READY_TIMEOUT"
 echo "[start.sh] COMFY_READY_INTERVAL= $COMFY_READY_INTERVAL"
-echo "[start.sh] SERVE_API_LOCALLY  = $SERVE_API_LOCALLY"
+echo "[start.sh] SERVE_API_LOCALLY   = $SERVE_API_LOCALLY"
 echo "[start.sh] ──────────────────────────────────────────────"
 
 # ── Sanity check ───────────────────────────────────────────────────────────────
@@ -52,39 +52,37 @@ fi
 
 mkdir -p "$COMFY_DIR/input" "$COMFY_DIR/output" "$COMFY_DIR/temp" "$COMFY_DIR/user"
 
-# ── GPU check ──────────────────────────────────────────────────────────────────
+# ── GPU check (non-fatal) ──────────────────────────────────────────────────────
 echo "[start.sh] Checking GPU..."
-GPU_CHECK=$(python3 -c "
+python3 - <<'PY' || echo "[start.sh] WARN: GPU check failed (continuing anyway)."
 import torch, sys
 try:
-    torch.cuda.init()
-    print('OK:', torch.cuda.get_device_name(0))
+    print("[start.sh] torch version:", torch.__version__)
+    print("[start.sh] cuda available:", torch.cuda.is_available())
+    if torch.cuda.is_available():
+        print("[start.sh] gpu:", torch.cuda.get_device_name(0))
 except Exception as e:
-    print('FAIL:', e, file=sys.stderr)
+    print("[start.sh] GPU probe failed:", e, file=sys.stderr)
     sys.exit(1)
-" 2>&1) || {
-  echo "[start.sh] GPU unavailable — $GPU_CHECK" >&2
-  exit 1
-}
-echo "[start.sh] GPU: $GPU_CHECK"
+PY
 
 # ── Write extra_model_paths.yaml from MODEL_BASE_PATH ──────────────────────────
-# This maps your network volume model tree into ComfyUI's model namespaces.
+# MODEL_BASE_PATH is the "models" root. Subfolders are relative to that root.
 cat > "$COMFY_DIR/extra_model_paths.yaml" <<EOF
 runpod_worker_comfy:
-  base_path: "$MODEL_BASE_PATH"
-  checkpoints: models/checkpoints
-  clip: models/clip
-  clip_vision: models/clip_vision
-  configs: models/configs
-  controlnet: models/controlnet
-  embeddings: models/embeddings
-  loras: models/loras
-  upscale_models: models/upscale_models
-  vae: models/vae
+  base_path: ${MODEL_BASE_PATH}
+  checkpoints: checkpoints
+  clip: clip
+  clip_vision: clip_vision
+  configs: configs
+  controlnet: controlnet
+  embeddings: embeddings
+  loras: loras
+  upscale_models: upscale_models
+  vae: vae
   diffusion_models:
-    - models/diffusion_models
-    - models/unet
+    - diffusion_models
+    - unet
 EOF
 
 # ── ComfyUI Manager offline mode ───────────────────────────────────────────────
@@ -101,9 +99,13 @@ COMFY_ARGS=(
   --port "$COMFY_PORT"
 )
 
-# If SERVE_API_LOCALLY=true, bind to 0.0.0.0 so the port is reachable externally
+# Explicit listen behaviour
 if [ "$SERVE_API_LOCALLY" = "true" ]; then
+  # For local dev / exposing API
   COMFY_ARGS+=(--listen 0.0.0.0)
+else
+  # Serverless worker: bind only to localhost
+  COMFY_ARGS+=(--listen 127.0.0.1)
 fi
 
 python -u "$COMFY_DIR/main.py" "${COMFY_ARGS[@]}" &
@@ -112,9 +114,6 @@ echo "$COMFY_PID" > "$COMFY_PID_FILE"
 echo "[start.sh] ComfyUI PID=$COMFY_PID"
 
 # ── Readiness probe — always uses 127.0.0.1 explicitly ────────────────────────
-# NOTE: We always probe 127.0.0.1 here regardless of COMFY_HOST, because
-# ComfyUI may still be binding only to localhost even if COMFY_HOST=0.0.0.0.
-# handler.py uses COMFY_HOST/COMFY_PORT independently for its own HTTP calls.
 READINESS_URL="http://127.0.0.1:${COMFY_PORT}/"
 echo "[start.sh] Readiness probe URL: $READINESS_URL (timeout=${COMFY_READY_TIMEOUT}s)"
 
