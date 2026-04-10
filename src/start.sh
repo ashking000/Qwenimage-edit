@@ -1,74 +1,82 @@
 #!/usr/bin/env bash
+# worker-comfyui  –  start.sh  (Qwen Network-Volume Edition)
 
-# Start SSH server if PUBLIC_KEY is set (enables remote access and dev-sync.sh)
+# ── SSH (optional) ────────────────────────────────────────────
 if [ -n "$PUBLIC_KEY" ]; then
     mkdir -p ~/.ssh
     echo "$PUBLIC_KEY" > ~/.ssh/authorized_keys
-    chmod 700 ~/.ssh
-    chmod 600 ~/.ssh/authorized_keys
-
-    # Generate host keys if they don't exist (removed during image build for security)
+    chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys
     for key_type in rsa ecdsa ed25519; do
         key_file="/etc/ssh/ssh_host_${key_type}_key"
-        if [ ! -f "$key_file" ]; then
-            ssh-keygen -t "$key_type" -f "$key_file" -q -N ''
-        fi
+        [ ! -f "$key_file" ] && ssh-keygen -t "$key_type" -f "$key_file" -q -N ''
     done
-
-    service ssh start && echo "worker-comfyui: SSH server started" || echo "worker-comfyui: SSH server could not be started" >&2
+    service ssh start && echo "worker-comfyui: SSH started" || echo "worker-comfyui: SSH failed" >&2
 fi
 
-# Use libtcmalloc for better memory management
+# ── Memory allocator ─────────────────────────────────────────
 TCMALLOC="$(ldconfig -p | grep -Po "libtcmalloc.so.\d" | head -n 1)"
-export LD_PRELOAD="${TCMALLOC}"
+[ -n "$TCMALLOC" ] && export LD_PRELOAD="${TCMALLOC}"
 
-# ---------------------------------------------------------------------------
-# GPU pre-flight check
-# Verify that the GPU is accessible before starting ComfyUI. If PyTorch
-# cannot initialize CUDA the worker will never be able to process jobs,
-# so we fail fast with an actionable error message.
-# ---------------------------------------------------------------------------
-echo "worker-comfyui: Checking GPU availability..."
+# ── GPU check ────────────────────────────────────────────────
+echo "worker-comfyui: Checking GPU..."
 if ! GPU_CHECK=$(python3 -c "
 import torch
 try:
     torch.cuda.init()
-    name = torch.cuda.get_device_name(0)
-    print(f'OK: {name}')
+    print(f'OK: {torch.cuda.get_device_name(0)}')
 except Exception as e:
     print(f'FAIL: {e}')
     exit(1)
 " 2>&1); then
-    echo "worker-comfyui: GPU is not available. PyTorch CUDA init failed:"
-    echo "worker-comfyui: $GPU_CHECK"
-    echo "worker-comfyui: This usually means the GPU on this machine is not properly initialized."
-    echo "worker-comfyui: Please contact RunPod support and report this machine."
+    echo "worker-comfyui: GPU unavailable – $GPU_CHECK"
     exit 1
 fi
-echo "worker-comfyui: GPU available — $GPU_CHECK"
+echo "worker-comfyui: $GPU_CHECK"
 
-# Ensure ComfyUI-Manager runs in offline network mode inside the container
-comfy-manager-set-mode offline || echo "worker-comfyui - Could not set ComfyUI-Manager network_mode" >&2
+# ── Symlink custom nodes from network volume ─────────────────
+# Your network volume already has all custom nodes at
+#   /runpod-volume/custom_nodes/<node-name>/
+# We symlink them into the ComfyUI workspace at startup.
+# This avoids re-downloading them on every image rebuild.
+if [ -d "/runpod-volume/custom_nodes" ]; then
+    echo "worker-comfyui: Linking custom nodes from /runpod-volume/custom_nodes ..."
+    mkdir -p /comfyui/custom_nodes
+    for node_dir in /runpod-volume/custom_nodes/*/; do
+        node_name=$(basename "$node_dir")
+        target="/comfyui/custom_nodes/$node_name"
+        if [ -e "$target" ] || [ -L "$target" ]; then
+            echo "  [skip]   $node_name"
+        else
+            ln -s "$node_dir" "$target"
+            echo "  [linked] $node_name"
+        fi
+    done
+    echo "worker-comfyui: Custom nodes ready."
+else
+    echo "worker-comfyui: WARNING – /runpod-volume/custom_nodes not found. No custom nodes linked."
+fi
 
+# ── ComfyUI-Manager → offline mode ───────────────────────────
+comfy-manager-set-mode offline \
+    || echo "worker-comfyui: Could not set Manager offline mode" >&2
+
+# ── Start ComfyUI ─────────────────────────────────────────────
 echo "worker-comfyui: Starting ComfyUI"
-
-# Allow operators to tweak verbosity; default is DEBUG.
 : "${COMFY_LOG_LEVEL:=DEBUG}"
-
-# PID file used by the handler to detect if ComfyUI is still running
 COMFY_PID_FILE="/tmp/comfyui.pid"
 
-# Serve the API and don't shutdown the container
 if [ "$SERVE_API_LOCALLY" == "true" ]; then
-    python -u /comfyui/main.py --disable-auto-launch --disable-metadata --listen --verbose "${COMFY_LOG_LEVEL}" --log-stdout &
+    python -u /comfyui/main.py \
+        --disable-auto-launch --disable-metadata \
+        --listen --verbose "${COMFY_LOG_LEVEL}" --log-stdout &
     echo $! > "$COMFY_PID_FILE"
-
-    echo "worker-comfyui: Starting RunPod Handler"
+    echo "worker-comfyui: Starting RunPod Handler (local API mode)"
     python -u /handler.py --rp_serve_api --rp_api_host=0.0.0.0
 else
-    python -u /comfyui/main.py --disable-auto-launch --disable-metadata --verbose "${COMFY_LOG_LEVEL}" --log-stdout &
+    python -u /comfyui/main.py \
+        --disable-auto-launch --disable-metadata \
+        --verbose "${COMFY_LOG_LEVEL}" --log-stdout &
     echo $! > "$COMFY_PID_FILE"
-
     echo "worker-comfyui: Starting RunPod Handler"
     python -u /handler.py
 fi
