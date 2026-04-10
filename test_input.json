@@ -1,115 +1,172 @@
 {
   "input": {
-    "images": [
-      {
-        "name": "test.png",
-        "image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAAMklEQVR4nGI5ZdXAQEvARFPTRy0YtWDUglELRi0YtWDUglELRi0YtWDUAioCQAAAAP//E24Bx3jUKuYAAAAASUVORK5CYII="
-      }
-    ],
     "workflow": {
-      "6": {
+      "37": {
+        "class_type": "UNETLoader",
         "inputs": {
-          "text": "anime cat with massive fluffy fennec ears and a big fluffy tail blonde messy long hair blue eyes wearing a construction outfit placing a fancy black forest cake with candles on top of a dinner table of an old dark Victorian mansion lit by candlelight with a bright window to the foggy forest and very expensive stuff everywhere there are paintings on the walls",
-          "clip": ["30", 1]
+          "unet_name": "qwen_image_2512_fp8_e4m3fn.safetensors",
+          "weight_dtype": "fp8_e4m3fn"
         },
-        "class_type": "CLIPTextEncode",
         "_meta": {
-          "title": "CLIP Text Encode (Positive Prompt)"
+          "title": "Load Diffusion Model (Qwen 2512)"
+        }
+      },
+      "91": {
+        "class_type": "LoraLoader",
+        "inputs": {
+          "model": [
+            "37",
+            0
+          ],
+          "clip": [
+            "11",
+            0
+          ],
+          "lora_name": "Qwen-Image-2512-Lightning-4steps-V1.0-fp32.safetensors",
+          "strength_model": 1.0,
+          "strength_clip": 1.0
+        },
+        "_meta": {
+          "title": "Lightning LoRA (4-step)"
+        }
+      },
+      "11": {
+        "class_type": "DualCLIPLoader",
+        "inputs": {
+          "clip_name1": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+          "clip_name2": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+          "type": "qwen2vl",
+          "device": "default"
+        },
+        "_meta": {
+          "title": "CLIP Loader (Qwen 2.5 VL)"
+        }
+      },
+      "12": {
+        "class_type": "VAELoader",
+        "inputs": {
+          "vae_name": "qwen_image_vae.safetensors"
+        },
+        "_meta": {
+          "title": "VAE Loader"
+        }
+      },
+      "6": {
+        "class_type": "CLIPTextEncode",
+        "inputs": {
+          "text": "a majestic lion standing on a cliff at sunset, golden hour lighting, photorealistic, 8k, detailed fur",
+          "clip": [
+            "91",
+            1
+          ]
+        },
+        "_meta": {
+          "title": "Positive Prompt"
+        }
+      },
+      "7": {
+        "class_type": "CLIPTextEncode",
+        "inputs": {
+          "text": "blurry, low quality, watermark, text, ugly, deformed",
+          "clip": [
+            "91",
+            1
+          ]
+        },
+        "_meta": {
+          "title": "Negative Prompt"
+        }
+      },
+      "80": {
+        "class_type": "INTConstant",
+        "inputs": {
+          "value": 1024
+        },
+        "_meta": {
+          "title": "Width"
+        }
+      },
+      "81": {
+        "class_type": "INTConstant",
+        "inputs": {
+          "value": 1024
+        },
+        "_meta": {
+          "title": "Height"
+        }
+      },
+      "5": {
+        "class_type": "EmptySD3LatentImage",
+        "inputs": {
+          "width": [
+            "80",
+            0
+          ],
+          "height": [
+            "81",
+            0
+          ],
+          "batch_size": 1
+        },
+        "_meta": {
+          "title": "Empty Latent"
+        }
+      },
+      "3": {
+        "class_type": "KSampler",
+        "inputs": {
+          "model": [
+            "91",
+            0
+          ],
+          "positive": [
+            "6",
+            0
+          ],
+          "negative": [
+            "7",
+            0
+          ],
+          "latent_image": [
+            "5",
+            0
+          ],
+          "seed": 42,
+          "steps": 4,
+          "cfg": 1.0,
+          "sampler_name": "euler",
+          "scheduler": "simple",
+          "denoise": 1.0
+        },
+        "_meta": {
+          "title": "KSampler"
         }
       },
       "8": {
-        "inputs": {
-          "samples": ["31", 0],
-          "vae": ["30", 2]
-        },
         "class_type": "VAEDecode",
+        "inputs": {
+          "samples": [
+            "3",
+            0
+          ],
+          "vae": [
+            "12",
+            0
+          ]
+        },
         "_meta": {
           "title": "VAE Decode"
         }
       },
       "9": {
-        "inputs": {
-          "filename_prefix": "ComfyUI",
-          "images": ["8", 0]
-        },
         "class_type": "SaveImage",
-        "_meta": {
-          "title": "Save Image"
-        }
-      },
-      "27": {
         "inputs": {
-          "width": 512,
-          "height": 512,
-          "batch_size": 1
+          "images": [
+            "8",
+            0
+          ],
+          "filename_prefix": "qwen2512_"
         },
-        "class_type": "EmptySD3LatentImage",
-        "_meta": {
-          "title": "EmptySD3LatentImage"
-        }
-      },
-      "30": {
-        "inputs": {
-          "ckpt_name": "flux1-dev-fp8.safetensors"
-        },
-        "class_type": "CheckpointLoaderSimple",
-        "_meta": {
-          "title": "Load Checkpoint"
-        }
-      },
-      "31": {
-        "inputs": {
-          "seed": 243057879077961,
-          "steps": 10,
-          "cfg": 1,
-          "sampler_name": "euler",
-          "scheduler": "simple",
-          "denoise": 1,
-          "model": ["30", 0],
-          "positive": ["35", 0],
-          "negative": ["33", 0],
-          "latent_image": ["27", 0]
-        },
-        "class_type": "KSampler",
-        "_meta": {
-          "title": "KSampler"
-        }
-      },
-      "33": {
-        "inputs": {
-          "text": "",
-          "clip": ["30", 1]
-        },
-        "class_type": "CLIPTextEncode",
-        "_meta": {
-          "title": "CLIP Text Encode (Negative Prompt)"
-        }
-      },
-      "35": {
-        "inputs": {
-          "guidance": 3.5,
-          "conditioning": ["6", 0]
-        },
-        "class_type": "FluxGuidance",
-        "_meta": {
-          "title": "FluxGuidance"
-        }
-      },
-      "38": {
-        "inputs": {
-          "images": ["8", 0]
-        },
-        "class_type": "PreviewImage",
-        "_meta": {
-          "title": "Preview Image"
-        }
-      },
-      "40": {
-        "inputs": {
-          "filename_prefix": "ComfyUI",
-          "images": ["8", 0]
-        },
-        "class_type": "SaveImage",
         "_meta": {
           "title": "Save Image"
         }
