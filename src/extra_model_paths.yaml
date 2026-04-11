@@ -1,17 +1,18 @@
-# ── Write extra_model_paths.yaml from MODEL_BASE_PATH ──────────────────────────
-cat > "$COMFY_DIR/extra_model_paths.yaml" <<EOF
 runpod_worker_comfy:
-  base_path: ${MODEL_BASE_PATH}
-  checkpoints: checkpoints
-  clip: clip
-  clip_vision: clip_vision
-  configs: configs
-  controlnet: controlnet
-  embeddings: embeddings
-  loras: loras
-  upscale_models: upscale_models
-  vae: vae
-  diffusion_models: |
-    diffusion_models
-    unet
-EOF
+  base_path: /runpod-volume/runpod-slim/ComfyUI/models
+  checkpoints: checkpoints/
+  clip: clip/
+  clip_vision: clip_vision/
+  configs: configs/
+  controlnet: controlnet/
+  embeddings: embeddings/
+  loras: loras/
+  upscale_models: upscale_models/
+  vae: vae/
+  unet: unet/
+  diffusion_models: diffusion_models/
+  text_encoders: text_encoders/
+  LLM: LLM/
+  model_patches: model_patches/
+  ipadapter: ipadapter/
+  insightface: insightface/
