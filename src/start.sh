@@ -54,7 +54,7 @@ mkdir -p "$COMFY_DIR/input" "$COMFY_DIR/output" "$COMFY_DIR/temp" "$COMFY_DIR/us
 
 # ── GPU check (non-fatal) ──────────────────────────────────────────────────────
 echo "[start.sh] Checking GPU..."
-python3 - <<'PY' || echo "[start.sh] WARN: GPU check failed (continuing anyway)."
+python3 - <<'PY' || echo "[start.sh] WARN: GPU check failed (continuing anyway)." >&2
 import torch, sys
 try:
     print("[start.sh] torch version:", torch.__version__)
@@ -80,13 +80,21 @@ runpod_worker_comfy:
   loras: loras
   upscale_models: upscale_models
   vae: vae
-  diffusion_models:
-    - diffusion_models
-    - unet
+  diffusion_models: |
+    diffusion_models
+    unet
 EOF
 
-# ── ComfyUI Manager offline mode ───────────────────────────────────────────────
-comfy-manager-set-mode offline || echo "[start.sh] Could not set Manager offline mode" >&2
+# ── Optionally disable comfy_aimdo custom node to avoid import errors ──────────
+if [ -d "$CUSTOM_NODES_PATH" ]; then
+  for d in "$CUSTOM_NODES_PATH"/*; do
+    [ -d "$d" ] || continue
+    if grep -R "comfy_aimdo" -q "$d" 2>/dev/null; then
+      echo "[start.sh] Disabling custom node using comfy_aimdo: $d"
+      mv "$d" "${d}.disabled" 2>/dev/null || true
+    fi
+  done
+fi
 
 # ── Launch ComfyUI in background ───────────────────────────────────────────────
 echo "[start.sh] Starting ComfyUI on $COMFY_HOST:$COMFY_PORT (log: $COMFY_LOG_LEVEL) ..."
