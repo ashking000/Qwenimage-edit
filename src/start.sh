@@ -33,33 +33,134 @@ TCMALLOC="$(ldconfig -p | grep -Po 'libtcmalloc\.so\.\d' | head -n 1 || true)"
 COMFY_PID_FILE="/tmp/comfyui.pid"
 
 echo "[start.sh] ──────────────────────────────────────────────"
-echo "[start.sh] COMFY_DIR           = $COMFY_DIR"
-echo "[start.sh] COMFY_HOST          = $COMFY_HOST"
-echo "[start.sh] COMFY_PORT          = $COMFY_PORT"
-echo "[start.sh] MODEL_BASE_PATH     = $MODEL_BASE_PATH"
-echo "[start.sh] CUSTOM_NODES_PATH   = $CUSTOM_NODES_PATH"
-echo "[start.sh] COMFY_LOG_LEVEL     = $COMFY_LOG_LEVEL"
-echo "[start.sh] COMFY_READY_TIMEOUT = $COMFY_READY_TIMEOUT"
-echo "[start.sh] COMFY_READY_INTERVAL= $COMFY_READY_INTERVAL"
 echo "[start.sh] SERVE_API_LOCALLY   = $SERVE_API_LOCALLY"
+echo "[start.sh] COMFY_READY_INTERVAL= $COMFY_READY_INTERVAL"
+echo "[start.sh] COMFY_READY_TIMEOUT = $COMFY_READY_TIMEOUT"
+echo "[start.sh] COMFY_LOG_LEVEL     = $COMFY_LOG_LEVEL"
+echo "[start.sh] CUSTOM_NODES_PATH   = $CUSTOM_NODES_PATH"
+echo "[start.sh] MODEL_BASE_PATH     = $MODEL_BASE_PATH"
+echo "[start.sh] COMFY_PORT          = $COMFY_PORT"
+echo "[start.sh] COMFY_HOST          = $COMFY_HOST"
+echo "[start.sh] COMFY_DIR           = $COMFY_DIR"
 echo "[start.sh] ──────────────────────────────────────────────"
+
+# ════════════════════════════════════════════════════════════════
+# FILESYSTEM DISCOVERY — dirs only, no file spam
+# ════════════════════════════════════════════════════════════════
+
+echo ""
+echo "[map] ══════════════ CONTAINER FILESYSTEM MAP ══════════════"
+
+# 1. Disk mounts
+echo "[map] ── Mounted filesystems (df -h):"
+df -h --output=source,fstype,size,used,avail,target 2>/dev/null | grep -v tmpfs | grep -v overlay | grep -v udev || df -h
+
+# 2. /proc/mounts — catch NFS / network volume
+echo "[map] ── Network/NFS mounts in /proc/mounts:"
+grep -E "nfs|runpod|volume|workspace|data|mnt" /proc/mounts 2>/dev/null || echo "[map]    (none found)"
+
+# 3. Root-level dirs only
+echo "[map] ── / (root) — top-level directories:"
+ls -la / | grep '^d' | awk '{print "[map]   " $NF}'
+
+# 4. Locate actual ComfyUI main.py
+echo "[map] ── Searching for ComfyUI main.py (max depth 6):"
+find / -maxdepth 6 -name "main.py" -path "*/comfyui*" 2>/dev/null \
+  | grep -v __pycache__ | head -n 10 | sed 's/^/[map]   /' \
+  || echo "[map]   (not found at depth 6)"
+
+find / -maxdepth 6 -name "main.py" -path "*/ComfyUI*" 2>/dev/null \
+  | grep -v __pycache__ | head -n 5 | sed 's/^/[map]   /' || true
+
+# 5. Known candidate locations
+echo "[map] ── Candidate ComfyUI locations:"
+for p in /comfyui /ComfyUI /workspace/ComfyUI /workspace/comfyui \
+          /root/ComfyUI /root/comfyui /opt/ComfyUI /opt/comfyui \
+          /app/ComfyUI /app/comfyui /home/ComfyUI; do
+  if [ -d "$p" ]; then
+    echo "[map]   FOUND dir: $p"
+    ls "$p" | tr '\n' '  ' | sed 's/^/[map]     contents: /'
+    echo ""
+  fi
+done
+
+# 6. $COMFY_DIR internal structure (dirs, depth 2)
+echo "[map] ── $COMFY_DIR internal (dirs, depth 2):"
+if [ -d "$COMFY_DIR" ]; then
+  find "$COMFY_DIR" -maxdepth 2 -type d 2>/dev/null \
+    | sed "s|$COMFY_DIR||" | grep -v "^$" | sort | sed 's/^/[map]   /'
+else
+  echo "[map]   !! $COMFY_DIR does NOT exist"
+fi
+
+# 7. /runpod-volume
+echo "[map] ── /runpod-volume status:"
+if [ -d "/runpod-volume" ]; then
+  echo "[map]   EXISTS — top-level dirs:"
+  find /runpod-volume -maxdepth 3 -type d 2>/dev/null | head -n 30 | sed 's/^/[map]   /'
+else
+  echo "[map]   !! /runpod-volume does NOT exist — network volume not mounted"
+fi
+
+# 8. Other common mount points
+echo "[map] ── Other common mount candidates:"
+for p in /workspace /data /mnt /vol /storage /network-volume; do
+  if [ -d "$p" ]; then
+    echo "[map]   FOUND: $p"
+    ls "$p" 2>/dev/null | head -n 5 | sed 's/^/[map]     /'
+  fi
+done
+
+# 9. Model file count by location (no individual listing)
+echo "[map] ── .safetensors / .gguf file counts by dir:"
+find / -maxdepth 7 \( -name "*.safetensors" -o -name "*.gguf" -o -name "*.ckpt" \) \
+  2>/dev/null \
+  | grep -v proc | grep -v sys \
+  | sed 's|/[^/]*$||' \
+  | sort | uniq -c | sort -rn \
+  | head -n 20 | sed 's/^/[map]   /'
+
+# 10. Existing extra_model_paths.yaml
+echo "[map] ── Existing extra_model_paths.yaml files:"
+find / -maxdepth 7 -name "extra_model_paths.yaml" 2>/dev/null \
+  | head -n 5 | sed 's/^/[map]   /' || echo "[map]   (none found)"
+
+# 11. custom_nodes dir + count
+echo "[map] ── Custom nodes dirs found:"
+find / -maxdepth 6 -type d -name "custom_nodes" 2>/dev/null \
+  | head -n 5 \
+  | while read -r d; do
+      cnt=$(find "$d" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | wc -l)
+      echo "[map]   $d  ($cnt nodes)"
+    done
+
+# 12. Python package check
+echo "[map] ── Key Python packages:"
+python3 -c "
+import importlib, sys
+pkgs = ['torch','torchvision','safetensors','transformers','diffusers','comfy']
+for p in pkgs:
+    try:
+        m = importlib.import_module(p)
+        ver = getattr(m, '__version__', 'no-version')
+        print(f'[map]   OK  {p} == {ver}')
+    except ImportError as e:
+        print(f'[map]   MISS {p}: {e}')
+" 2>&1
+
+echo "[map] ══════════════ END FILESYSTEM MAP ══════════════"
+echo ""
+
+# ════════════════════════════════════════════════════════════════
+# END DISCOVERY
+# ════════════════════════════════════════════════════════════════
 
 # ── Sanity check ───────────────────────────────────────────────────────────────
 if [ ! -d "$COMFY_DIR" ]; then
   echo "[start.sh] ERROR — COMFY_DIR not found: $COMFY_DIR" >&2
+  echo "[start.sh] Check [map] output above for where ComfyUI actually lives." >&2
   exit 1
 fi
-
-echo "[start.sh] Debug: listing model dirs on /runpod-volume"
-ls -lah /runpod-volume/runpod-slim/ComfyUI/models/vae || true
-ls -lah /runpod-volume/runpod-slim/ComfyUI/models/unet | head || true
-ls -lah /runpod-volume/runpod-slim/ComfyUI/models/text_encoders | head || true
-
-echo "[start.sh] Debug: /runpod-volume root listing"
-ls -lah /runpod-volume || true
-echo "[start.sh] Debug: find ComfyUI/models under /runpod-volume (top 50)"
-find /runpod-volume -maxdepth 4 -type d -name models -o -name ComfyUI | head -n 50 || true
-
 
 mkdir -p "$COMFY_DIR/input" "$COMFY_DIR/output" "$COMFY_DIR/temp" "$COMFY_DIR/user"
 
@@ -77,8 +178,7 @@ except Exception as e:
     sys.exit(1)
 PY
 
-# ── Write extra_model_paths.yaml from MODEL_BASE_PATH ──────────────────────────
-# MODEL_BASE_PATH is the "models" root. Subfolders are relative to that root.
+# ── Write extra_model_paths.yaml ───────────────────────────────────────────────
 cat > "$COMFY_DIR/extra_model_paths.yaml" <<EOF
 runpod_worker_comfy:
   base_path: ${MODEL_BASE_PATH}
@@ -94,9 +194,13 @@ runpod_worker_comfy:
   diffusion_models: |
     diffusion_models
     unet
+  text_encoders: text_encoders
 EOF
 
-# ── Optionally disable comfy_aimdo custom node to avoid import errors ──────────
+echo "[start.sh] Wrote extra_model_paths.yaml pointing at: $MODEL_BASE_PATH"
+cat "$COMFY_DIR/extra_model_paths.yaml" | sed 's/^/[start.sh]   /'
+
+# ── Optionally disable broken custom nodes ────────────────────────────────────
 if [ -d "$CUSTOM_NODES_PATH" ]; then
   for d in "$CUSTOM_NODES_PATH"/*; do
     [ -d "$d" ] || continue
@@ -107,7 +211,7 @@ if [ -d "$CUSTOM_NODES_PATH" ]; then
   done
 fi
 
-# ── Launch ComfyUI in background ───────────────────────────────────────────────
+# ── Launch ComfyUI in background ──────────────────────────────────────────────
 echo "[start.sh] Starting ComfyUI on $COMFY_HOST:$COMFY_PORT (log: $COMFY_LOG_LEVEL) ..."
 
 COMFY_ARGS=(
@@ -119,12 +223,9 @@ COMFY_ARGS=(
   --extra-model-paths-config "$COMFY_DIR/extra_model_paths.yaml"
 )
 
-# Explicit listen behaviour
 if [ "$SERVE_API_LOCALLY" = "true" ]; then
-  # For local dev / exposing API
   COMFY_ARGS+=(--listen 0.0.0.0)
 else
-  # Serverless worker: bind only to localhost
   COMFY_ARGS+=(--listen 127.0.0.1)
 fi
 
@@ -133,7 +234,7 @@ COMFY_PID=$!
 echo "$COMFY_PID" > "$COMFY_PID_FILE"
 echo "[start.sh] ComfyUI PID=$COMFY_PID"
 
-# ── Readiness probe — always uses 127.0.0.1 explicitly ────────────────────────
+# ── Readiness probe ────────────────────────────────────────────────────────────
 READINESS_URL="http://127.0.0.1:${COMFY_PORT}/"
 echo "[start.sh] Readiness probe URL: $READINESS_URL (timeout=${COMFY_READY_TIMEOUT}s)"
 
@@ -141,7 +242,6 @@ ELAPSED=0
 READY=0
 
 while [ "$ELAPSED" -lt "$COMFY_READY_TIMEOUT" ]; do
-  # Fast-fail if ComfyUI process died before becoming ready
   if ! kill -0 "$COMFY_PID" 2>/dev/null; then
     echo "[start.sh] ERROR — ComfyUI process (PID=$COMFY_PID) exited before becoming ready." >&2
     echo "[start.sh] Check above logs for Python traceback / CUDA / model-loading error." >&2
@@ -165,7 +265,7 @@ fi
 
 echo "[start.sh] ✅ ComfyUI ready at $READINESS_URL (after ${ELAPSED}s)"
 
-# ── Start RunPod handler (foreground) ──────────────────────────────────────────
+# ── Start RunPod handler (foreground) ─────────────────────────────────────────
 echo "[start.sh] Starting RunPod Handler ..."
 if [ "$SERVE_API_LOCALLY" = "true" ]; then
   exec python -u /handler.py --rp_serve_api --rp_api_host=0.0.0.0
