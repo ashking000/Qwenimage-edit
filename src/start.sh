@@ -50,6 +50,12 @@ if [ ! -d "$COMFY_DIR" ]; then
   exit 1
 fi
 
+echo "[start.sh] Debug: listing model dirs on /runpod-volume"
+ls -lah /runpod-volume/runpod-slim/ComfyUI/models/vae || true
+ls -lah /runpod-volume/runpod-slim/ComfyUI/models/unet | head || true
+ls -lah /runpod-volume/runpod-slim/ComfyUI/models/text_encoders | head || true
+
+
 mkdir -p "$COMFY_DIR/input" "$COMFY_DIR/output" "$COMFY_DIR/temp" "$COMFY_DIR/user"
 
 # ── GPU check (non-fatal) ──────────────────────────────────────────────────────
