@@ -116,7 +116,7 @@ COMFY_ARGS=(
   --verbose "$COMFY_LOG_LEVEL"
   --log-stdout
   --port "$COMFY_PORT"
-  COMFY_ARGS+=(--extra-model-paths-config "$COMFY_DIR/extra_model_paths.yaml")
+  --extra-model-paths-config "$COMFY_DIR/extra_model_paths.yaml"
 )
 
 # Explicit listen behaviour
