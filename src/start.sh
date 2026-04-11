@@ -55,6 +55,11 @@ ls -lah /runpod-volume/runpod-slim/ComfyUI/models/vae || true
 ls -lah /runpod-volume/runpod-slim/ComfyUI/models/unet | head || true
 ls -lah /runpod-volume/runpod-slim/ComfyUI/models/text_encoders | head || true
 
+echo "[start.sh] Debug: /runpod-volume root listing"
+ls -lah /runpod-volume || true
+echo "[start.sh] Debug: find ComfyUI/models under /runpod-volume (top 50)"
+find /runpod-volume -maxdepth 4 -type d -name models -o -name ComfyUI | head -n 50 || true
+
 
 mkdir -p "$COMFY_DIR/input" "$COMFY_DIR/output" "$COMFY_DIR/temp" "$COMFY_DIR/user"
 
