@@ -59,12 +59,12 @@ RUN if [ -n "${CUDA_VERSION_FOR_COMFY}" ]; then \
 # NEW: ensure ComfyUI core deps (alembic/sqlite stack) are installed
 RUN uv pip install --no-cache-dir -r /comfyui/requirements.txt
 
-# ── Optional PyTorch upgrade ───────────────────────────────────────────────────
-RUN if [ "$ENABLE_PYTORCH_UPGRADE" = "true" ] && [ -n "$PYTORCH_INDEX_URL" ]; then \
-      uv pip install --no-cache-dir --force-reinstall \
-          torch torchvision torchaudio \
-          --index-url ${PYTORCH_INDEX_URL}; \
-    fi
+# ── PyTorch pinned to CUDA 12.1 (compatible with host driver 12.x) ─────────────
+RUN uv pip install --no-cache-dir --force-reinstall \
+      torch==2.3.1+cu121 \
+      torchvision==0.18.1+cu121 \
+      torchaudio==2.3.1+cu121 \
+      --index-url https://download.pytorch.org/whl/cu121
 
 # ── RunPod handler deps ────────────────────────────────────────────────────────
 RUN uv pip install --no-cache-dir runpod requests websocket-client
